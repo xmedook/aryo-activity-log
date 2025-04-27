@@ -93,6 +93,9 @@ class AAL_API {
 				'object_id'      => '',
 				'hist_ip'        => $this->_get_ip_address(),
 				'hist_time'      => current_time( 'timestamp' ),
+				'start_time'     => 0,
+				'end_time'       => 0,
+				'duration'       => 0,
 			)
 		);
 
@@ -144,8 +147,11 @@ class AAL_API {
 				'user_caps'      => $args['user_caps'],
 				'hist_ip'        => $args['hist_ip'],
 				'hist_time'      => $args['hist_time'],
+				'start_time'     => $args['start_time'],
+				'end_time'       => $args['end_time'],
+				'duration'       => $args['duration'],
 			),
-			array( '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%d' )
+			array( '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%d', '%d', '%d', '%d' )
 		);
 
 		do_action( 'aal_insert_log', $args );
@@ -178,6 +184,57 @@ class AAL_API {
 
 		return $args;
 	}
+
+	/**
+	 * Inicia el seguimiento de una actividad
+	 *
+	 * @param array $args Los argumentos de la actividad
+	 * @return int|false El ID de la actividad o false si falla
+	 */
+	public function start_activity( $args ) {
+		global $wpdb;
+
+		$args['start_time'] = current_time( 'timestamp' );
+		$args['end_time'] = 0;
+		$args['duration'] = 0;
+
+		$this->insert( $args );
+
+		return $wpdb->insert_id;
+	}
+
+	/**
+	 * Finaliza el seguimiento de una actividad
+	 *
+	 * @param int $activity_id El ID de la actividad
+	 * @return bool True si se actualizó correctamente, false si falló
+	 */
+	public function end_activity( $activity_id ) {
+		global $wpdb;
+
+		$end_time = current_time( 'timestamp' );
+		$activity = $wpdb->get_row( $wpdb->prepare(
+			"SELECT start_time FROM {$wpdb->activity_log} WHERE histid = %d",
+			$activity_id
+		) );
+
+		if ( ! $activity ) {
+			return false;
+		}
+
+		$duration = $end_time - $activity->start_time;
+
+		return $wpdb->update(
+			$wpdb->activity_log,
+			array(
+				'end_time' => $end_time,
+				'duration' => $duration
+			),
+			array( 'histid' => $activity_id ),
+			array( '%d', '%d' ),
+			array( '%d' )
+		);
+	}
 }
 
 /**
@@ -190,4 +247,24 @@ class AAL_API {
  */
 function aal_insert_log( $args = array() ) {
 	AAL_Main::instance()->api->insert( $args );
+}
+
+/**
+ * Inicia el seguimiento de una actividad
+ *
+ * @param array $args Los argumentos de la actividad
+ * @return int|false El ID de la actividad o false si falla
+ */
+function aal_start_activity( $args = array() ) {
+	return AAL_Main::instance()->api->start_activity( $args );
+}
+
+/**
+ * Finaliza el seguimiento de una actividad
+ *
+ * @param int $activity_id El ID de la actividad
+ * @return bool True si se actualizó correctamente, false si falló
+ */
+function aal_end_activity( $activity_id ) {
+	return AAL_Main::instance()->api->end_activity( $activity_id );
 }

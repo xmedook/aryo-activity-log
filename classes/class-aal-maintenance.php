@@ -11,10 +11,12 @@ class AAL_Maintenance {
 			foreach ( $blog_ids as $blog_id ) {
 				switch_to_blog( $blog_id );
 				self::_create_tables();
+			self::maybe_upgrade();
 				restore_current_blog();
 			}
 		} else {
 			self::_create_tables();
+			self::maybe_upgrade();
 		}
 
 		wp_clear_scheduled_hook( 'aal/maintenance/clear_old_items' );
@@ -41,6 +43,7 @@ class AAL_Maintenance {
 		if ( is_plugin_active_for_network( ACTIVITY_LOG_BASE ) ) {
 			switch_to_blog( $blog_id );
 			self::_create_tables();
+			self::maybe_upgrade();
 			restore_current_blog();
 		}
 	}
@@ -67,6 +70,9 @@ class AAL_Maintenance {
 					  `user_id` int(11) NOT NULL DEFAULT '0',
 					  `hist_ip` varchar(55) NOT NULL DEFAULT '127.0.0.1',
 					  `hist_time` int(11) NOT NULL DEFAULT '0',
+					  `start_time` int(11) NOT NULL DEFAULT '0',
+					  `end_time` int(11) NOT NULL DEFAULT '0',
+					  `duration` int(11) NOT NULL DEFAULT '0',
 					  PRIMARY KEY (`histid`),
 						KEY `user_caps` (`user_caps`),
 						KEY `action` (`action`),
@@ -75,7 +81,10 @@ class AAL_Maintenance {
 						KEY `object_name` (`object_name`),
 						KEY `user_id` (`user_id`),
 						KEY `hist_ip` (`hist_ip`),
-						KEY `hist_time` (`hist_time`)
+						KEY `hist_time` (`hist_time`),
+						KEY `start_time` (`start_time`),
+						KEY `end_time` (`end_time`),
+						KEY `duration` (`duration`)
 				) $charset_collate;";
 
 		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
@@ -85,7 +94,34 @@ class AAL_Maintenance {
 		if ( $admin_role instanceof WP_Role && ! $admin_role->has_cap( 'view_all_aryo_activity_log' ) )
 			$admin_role->add_cap( 'view_all_aryo_activity_log' );
 		
-		update_option( 'activity_log_db_version', '1.0' );
+		update_option( 'activity_log_db_version', '1.1' );
+	}
+
+	\tpublic static function maybe_upgrade() {
+		$current_version = get_option( 'activity_log_db_version' );
+		if ( '1.1' !== $current_version ) {
+			self::upgrade_to_1_1();
+		}
+	}
+
+	protected static function upgrade_to_1_1() {
+		global $wpdb;
+
+		$charset_collate = $wpdb->get_charset_collate();
+		$table_name = $wpdb->prefix . 'aryo_activity_log';
+
+		// Agregar nuevas columnas si no existen
+		$wpdb->query( "ALTER TABLE {$table_name} ADD COLUMN IF NOT EXISTS start_time int(11) NOT NULL DEFAULT '0'" );
+		$wpdb->query( "ALTER TABLE {$table_name} ADD COLUMN IF NOT EXISTS end_time int(11) NOT NULL DEFAULT '0'" );
+		$wpdb->query( "ALTER TABLE {$table_name} ADD COLUMN IF NOT EXISTS duration int(11) NOT NULL DEFAULT '0'" );
+
+		// Agregar índices para las nuevas columnas
+		$wpdb->query( "ALTER TABLE {$table_name} ADD INDEX start_time (start_time)" );
+		$wpdb->query( "ALTER TABLE {$table_name} ADD INDEX end_time (end_time)" );
+		$wpdb->query( "ALTER TABLE {$table_name} ADD INDEX duration (duration)" );
+
+		// Actualizar la versión de la base de datos
+		update_option( 'activity_log_db_version', '1.1' );
 	}
 
 	protected static function _remove_tables() {
